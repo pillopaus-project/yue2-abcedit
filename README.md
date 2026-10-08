@@ -1,5 +1,7 @@
 # yue2-abcedit
 
+src code by Muse-spark-1.3 
+
 Qt 6 desktop app that converts **MIDI** and **standard ABC** input into a
 **bounded native ABC dialect**, with a live-validation editor pane and an
 audio preview of the editor content.
