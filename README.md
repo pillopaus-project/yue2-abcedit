@@ -25,6 +25,15 @@ for every rule. Never "fix" output by editing the checker.
 - **Editor pane**: free editing with live checker feedback, font-size control,
   and a **Preview sound / Play in app** path rendering `/tmp/temp.wav`.
 
+
+<img width="1122" height="810" alt="yue2-abcedit_1" src="https://github.com/user-attachments/assets/553fd162-fdb7-476f-a3e5-e29d915b48de" />
+
+<img width="1122" height="810" alt="yue2-abcedit_2" src="https://github.com/user-attachments/assets/afacd0ff-0fac-4b9a-9718-fbcd0014860c" />
+
+<img width="1396" height="810" alt="yue2-abcedit_3" src="https://github.com/user-attachments/assets/b8499808-8b57-463e-8461-587591428f7e" />
+
+
+
 ## Compiling
 
 Requirements: CMake ≥ 3.21, C++17 compiler, Qt 6
