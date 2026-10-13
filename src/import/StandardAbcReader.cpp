@@ -115,11 +115,20 @@ int parseStdPitch(const std::string& s, size_t& p, std::string& accOut,
 bool StandardAbcReader::probeVoices(const std::string& path,
                                     std::vector<SourceEntry>& voices,
                                     std::string& error) {
-    std::ifstream in(path);
+    std::ifstream in(path, std::ios::binary);
     if (!in) {
         error = "cannot open file";
         return false;
     }
+    std::ostringstream ss;
+    ss << in.rdbuf();
+    return probeVoicesFromText(ss.str(), voices, error);
+}
+
+bool StandardAbcReader::probeVoicesFromText(const std::string& text,
+                                            std::vector<SourceEntry>& voices,
+                                            std::string& error) {
+    std::istringstream in(text);
     // File order (first-seen), matching importFile's voice table: the
     // mapper's row index is the assignment index, so sorted output here
     // would silently swap voices on import.
@@ -225,11 +234,19 @@ bool StandardAbcReader::probeVoices(const std::string& path,
 
 bool StandardAbcReader::importFile(const std::string& path, const Options& opt,
                                    Song& song, std::string& error) {
-    std::ifstream in(path);
+    std::ifstream in(path, std::ios::binary);
     if (!in) {
         error = "cannot open file";
         return false;
     }
+    std::ostringstream ss;
+    ss << in.rdbuf();
+    return importText(ss.str(), opt, song, error);
+}
+
+bool StandardAbcReader::importText(const std::string& text, const Options& opt,
+                                   Song& song, std::string& error) {
+    std::istringstream in(text);
     std::vector<std::string> lines;
     std::string line;
     while (std::getline(in, line)) {

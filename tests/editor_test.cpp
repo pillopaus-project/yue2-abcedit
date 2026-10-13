@@ -6,6 +6,8 @@
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QComboBox>
+#include <QFile>
+#include <QMessageBox>
 #include <QTimer>
 #include <iostream>
 #include <string>
@@ -57,14 +59,14 @@ int main(int argc, char** argv) {
 
     // 2. Open a real score into the pane (working dir = repo root).
     yue2_abcedit::MainWindow win;
-    check(win.openEditorFile("example_code/sample1.abc"), "open sample1.abc");
+    check(win.openEditorFile("tests/data/mini.abc"), "open mini.abc");
     check(!win.openEditorFile("/tmp/opencode/no-such-file.abc"),
           "open missing file fails");
     auto* editor = win.findChild<QPlainTextEdit*>();
     check(editor != nullptr, "editor pane exists");
     check(editor && editor->toPlainText().startsWith("X:1"),
           "opened text lands in the pane");
-    check(findLabel(win, "sample1.abc") != nullptr,
+    check(findLabel(win, "mini.abc") != nullptr,
           "file label shows the opened path");
 
     // 3. Live validation accepts the opened score...
@@ -77,7 +79,7 @@ int main(int argc, char** argv) {
     waitMs(700);
     check(findLabel(win, "live FAIL") != nullptr,
           "live checker fails broken edit");
-    QLabel* fileLabel = findLabel(win, "sample1.abc");
+    QLabel* fileLabel = findLabel(win, "mini.abc");
     check(fileLabel && fileLabel->text().contains("*"),
           "dirty flag shown after edit");
 
@@ -102,8 +104,8 @@ int main(int argc, char** argv) {
     // 6. Preview button renders the cached live verdict to /tmp/temp.wav.
     {
         yue2_abcedit::MainWindow win2;
-        check(win2.openEditorFile("example_code/sample1.abc"),
-              "open sample1 for preview");
+        check(win2.openEditorFile("tests/data/mini.abc"),
+              "open mini for preview");
         waitMs(700);
         QPushButton* preview = nullptr;
         for (auto* b : win2.findChildren<QPushButton*>())
@@ -141,6 +143,55 @@ int main(int argc, char** argv) {
             if (l->text().startsWith("Step") && l->font().bold())
                 boldHeader = true;
         check(boldHeader, "step header is bold");
+    }
+
+    // 8. Yue2 JSON opens straight into the editor unchanged (already
+    // native: no rebuild, comments and spellings intact).
+    {
+        yue2_abcedit::MainWindow win4;
+        check(win4.openJsonAbc("sample-full.json"), "open sample-full.json");
+        check(!win4.openJsonAbc("/tmp/opencode/no-such.json"),
+              "open missing json fails");
+        auto* editor4 = win4.findChild<QPlainTextEdit*>();
+        QString jt = editor4->toPlainText();
+        check(jt.startsWith("X:1\n"), "json abc lands in the pane");
+        check(jt.contains("% intro"), "json section comment kept");
+        waitMs(700);
+        check(findLabel(win4, "live PASS") != nullptr,
+              "live checker passes stored json abc");
+    }
+
+    // 9. Export counts as saving: after Export JSON the dirty flag clears.
+    {
+        yue2_abcedit::MainWindow win5;
+        check(win5.openJsonAbc("sample-full.json"), "open json for export");
+        auto* editor5 = win5.findChild<QPlainTextEdit*>();
+        QString tweak = editor5->toPlainText();
+        check(tweak.contains("Q:1/4=125"), "tempo line present to tweak");
+        editor5->setPlainText(tweak.replace("Q:1/4=125", "Q:1/4=100"));
+        QLabel* dirtyLabel = findLabel(win5, "*");
+        check(dirtyLabel != nullptr, "dirty flag shown after tweak");
+        // Start without a stale output so no overwrite confirm appears;
+        // auto-accept the done notice.
+        QFile::remove("sample-full-edited.json");
+        auto acceptBoxes = [] {
+            for (QWidget* w : QApplication::topLevelWidgets())
+                if (auto* box = qobject_cast<QMessageBox*>(w)) box->accept();
+        };
+        QTimer::singleShot(500, acceptBoxes);
+        QTimer::singleShot(2000, acceptBoxes);
+        QPushButton* expJson = nullptr;
+        for (auto* b : win5.findChildren<QPushButton*>())
+            if (b->text().contains("Export JSON") &&
+                !b->text().contains("path"))
+                expJson = b;
+        check(expJson != nullptr, "export json button exists");
+        if (expJson) {
+            expJson->click();
+            waitMs(500);
+            check(findLabel(win5, "*") == nullptr,
+                  "dirty flag cleared after export");
+        }
     }
 
     if (failures) {

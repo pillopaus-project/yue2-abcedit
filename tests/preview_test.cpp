@@ -37,22 +37,28 @@ bool validWav(const std::string& path) {
 }  // namespace
 
 int main() {
-    // Melody-only score (sample1: Vocal rests, Ins carries the tune).
+    // Melody-only score (Vocal rests, Ins carries the tune).
     {
-        auto cr = yue2_abcedit::AbcChecker::check(readFile("example_code/sample1.abc"));
-        check(cr.ok, "sample1 passes the checker");
+        auto cr = yue2_abcedit::AbcChecker::check(
+            readFile("tests/data/mini.abc"));
+        check(cr.ok, "mini passes the checker");
         auto pr = yue2_abcedit::PreviewSound::render(
-            cr, "/tmp/opencode/preview-sample1.wav");
-        check(pr.ok, "sample1 renders");
-        check(pr.seconds > 0 && pr.samples > 0, "sample1 render has length");
-        check(validWav("/tmp/opencode/preview-sample1.wav"),
-              "sample1 render is a valid WAV");
+            cr, "/tmp/opencode/preview-mini.wav");
+        check(pr.ok, "mini renders");
+        check(pr.seconds > 0 && pr.samples > 0, "mini render has length");
+        check(validWav("/tmp/opencode/preview-mini.wav"),
+              "mini render is a valid WAV");
     }
-    // Score with chord symbols (conv_1: Vocal chords over rests + melody).
+    // Score with chord symbols (Vocal chords + melody).
+    const std::string kChords =
+        "X:1\nT:\nM:4/4\nL:1/32\nQ:1/4=88\n"
+        "V: Vocal clef=treble name=\"Vocal Melody\" snm=\"Vocal\"\n"
+        "V: Ins clef=treble name=\"Ins Melody\" snm=\"Inst.\"\nK:G\n"
+        "% verse\nV: Vocal\n\"Gmaj7\"B8d8c8A8|F16G16|\nV: Ins\nZ2|\n";
     {
-        auto cr = yue2_abcedit::AbcChecker::check(readFile("conv_1.abc"));
-        check(cr.ok, "conv_1 passes the checker");
-        check(!cr.vocal.chords.empty(), "conv_1 carries chord symbols");
+        auto cr = yue2_abcedit::AbcChecker::check(kChords);
+        check(cr.ok, "chord score passes the checker");
+        check(!cr.vocal.chords.empty(), "chord score carries chord symbols");
         auto pr = yue2_abcedit::PreviewSound::render(
             cr, "/tmp/opencode/preview-chords.wav");
         check(pr.ok, "chord score renders");
@@ -61,7 +67,7 @@ int main() {
     }
     // Muted chords: melody only, still a valid WAV.
     {
-        auto cr = yue2_abcedit::AbcChecker::check(readFile("conv_1.abc"));
+        auto cr = yue2_abcedit::AbcChecker::check(kChords);
         auto pr = yue2_abcedit::PreviewSound::render(
             cr, "/tmp/opencode/preview-muted.wav", false);
         check(pr.ok, "muted chord score renders");

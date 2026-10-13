@@ -24,6 +24,7 @@
 #include "core/AbcDialect.h"
 #include "import/MidiImport.h"
 #include "import/StandardAbcReader.h"
+#include "import/Yue2Json.h"
 
 namespace {
 
@@ -38,6 +39,14 @@ bool isMidiPath(const std::string& path) {
     std::string ext = path.substr(dot + 1);
     for (char& c : ext) c = static_cast<char>(std::tolower(c));
     return ext == "mid" || ext == "midi";
+}
+
+bool isJsonPath(const std::string& path) {
+    auto dot = path.find_last_of('.');
+    if (dot == std::string::npos) return false;
+    std::string ext = path.substr(dot + 1);
+    for (char& c : ext) c = static_cast<char>(std::tolower(c));
+    return ext == "json";
 }
 
 int usage() {
@@ -82,8 +91,18 @@ int main(int argc, char** argv) {
     }
 
     bool midi = isMidiPath(inPath);
+    bool jsonIn = isJsonPath(inPath);
+    bool jsonOut = isJsonPath(outPath);
+    if (jsonIn) midi = false;
     yue2_abcedit::Song song;
     std::string err;
+    QString jsonAbc;  // extracted "abc" when input is Yue2 JSON
+    if (jsonIn) {
+        if (!yue2_abcedit::Yue2Json::loadAbc(inPath, jsonAbc, err)) {
+            std::cerr << "json load failed: " << err << "\n";
+            return 2;
+        }
+    }
     if (midi) {
         std::vector<yue2_abcedit::SourceEntry> tracks;
         if (!yue2_abcedit::MidiImport::probeTracks(inPath, tracks, err)) {
@@ -95,6 +114,49 @@ int main(int argc, char** argv) {
             std::cerr << "import failed: " << err << "\n";
             return 2;
         }
+    } else if (jsonIn) {
+        // Stored ABC is already native dialect: checker-gate it and merge it
+        // back unchanged (no rebuild, which would re-render bars and drop %
+        // comments). Refusals name the reason, like every other gate.
+        std::string abcText = jsonAbc.toStdString();
+        auto cr = yue2_abcedit::AbcChecker::check(abcText);
+        std::ostringstream jlog;
+        jlog << "input=" << inPath << " (yue2-json)\n";
+        jlog << "mode=passthrough (already native, checker-gated)\n";
+        jlog << "checker=" << (cr.ok ? "PASS" : "FAIL");
+        if (!cr.ok) jlog << " " << cr.error;
+        jlog << "\n";
+        {
+            std::ofstream lf(logPath, std::ios::trunc);
+            if (!lf) {
+                std::cerr << "cannot write log: " << logPath << "\n";
+                return 2;
+            }
+            lf << jlog.str();
+        }
+        if (!cr.ok) {
+            std::cerr << "conversion refused: stored abc fails the checker: "
+                      << cr.error << "\n";
+            return 1;
+        }
+        if (jsonOut) {
+            std::string jerr;
+            if (!yue2_abcedit::Yue2Json::saveAbc(
+                    inPath, jsonAbc, outPath, jerr)) {
+                std::cerr << "cannot write output: " << jerr << "\n";
+                return 2;
+            }
+        } else {
+            std::ofstream out(outPath, std::ios::trunc);
+            if (!out) {
+                std::cerr << "cannot write output: " << outPath << "\n";
+                return 2;
+            }
+            out << abcText;
+        }
+        std::cout << "wrote " << outPath << " (" << cr.vocal.bars.size()
+                  << " bars) + " << logPath << "\n";
+        return 0;
     } else {
         std::vector<yue2_abcedit::SourceEntry> voices;
         if (!yue2_abcedit::StandardAbcReader::probeVoices(inPath, voices, err)) {
@@ -113,7 +175,8 @@ int main(int argc, char** argv) {
                : yue2_abcedit::Quantizer::pickL(song);
 
     std::ostringstream log;
-    log << "input=" << inPath << (midi ? " (midi)" : " (abc)") << "\n";
+    log << "input=" << inPath
+        << (midi ? " (midi)" : (jsonIn ? " (yue2-json)" : " (abc)")) << "\n";
     log << "snap=" << (snapOn ? "on" : "off") << "\n";
     log << "bpm=" << song.bpm << " meter=" << song.meterN << "/"
         << song.meterD << " key=" << song.key << " vocal=" << song.vocal.size()
@@ -149,12 +212,22 @@ int main(int argc, char** argv) {
         return 1;
     }
     {
-        std::ofstream out(outPath, std::ios::trunc);
-        if (!out) {
-            std::cerr << "cannot write output: " << outPath << "\n";
-            return 2;
+        if (jsonOut && jsonIn) {
+            // Merge back into a copy of the source JSON: only "abc" replaced.
+            std::string jerr;
+            if (!yue2_abcedit::Yue2Json::saveAbc(
+                    inPath, QString::fromStdString(er.text), outPath, jerr)) {
+                std::cerr << "cannot write output: " << jerr << "\n";
+                return 2;
+            }
+        } else {
+            std::ofstream out(outPath, std::ios::trunc);
+            if (!out) {
+                std::cerr << "cannot write output: " << outPath << "\n";
+                return 2;
+            }
+            out << er.text;
         }
-        out << er.text;
     }
     // Final gate: the written file must pass the checker.
     auto cr = yue2_abcedit::AbcChecker::check(er.text);

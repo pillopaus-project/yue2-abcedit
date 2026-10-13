@@ -7,7 +7,7 @@
 
 namespace yue2_abcedit {
 
-// C++ port of example_code/abc_tools.py validation logic.
+// Native-dialect ABC validation logic.
 
 struct CheckerNote {
     Fraction onset;

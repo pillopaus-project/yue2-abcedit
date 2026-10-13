@@ -18,6 +18,7 @@ add_executable(yue2-abcedit
   src/core/SongModel.cpp
   src/import/MidiImport.cpp
   src/import/StandardAbcReader.cpp
+  src/import/Yue2Json.cpp
   src/convert/ChordFold.cpp
   src/convert/Quantizer.cpp
   src/convert/Exporter.cpp
@@ -37,7 +38,7 @@ add_executable(checker_test
 )
 target_include_directories(checker_test PRIVATE src)
 add_test(NAME checker_parity
-         COMMAND checker_test ${CMAKE_SOURCE_DIR}/example_code)
+         COMMAND checker_test)
 set_tests_properties(checker_parity PROPERTIES
                      WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 
@@ -49,11 +50,13 @@ add_executable(pipeline_test
   src/core/SongModel.cpp
   src/import/MidiImport.cpp
   src/import/StandardAbcReader.cpp
+  src/import/Yue2Json.cpp
   src/convert/ChordFold.cpp
   src/convert/Quantizer.cpp
   src/convert/Exporter.cpp
 )
 target_include_directories(pipeline_test PRIVATE src)
+target_link_libraries(pipeline_test PRIVATE Qt6::Widgets Qt6::Multimedia)
 add_test(NAME pipeline_mid2abc
          COMMAND pipeline_test ${CMAKE_SOURCE_DIR}/tests/data)
 set_tests_properties(pipeline_mid2abc PROPERTIES
@@ -69,6 +72,7 @@ add_executable(editor_test
   src/core/SongModel.cpp
   src/import/MidiImport.cpp
   src/import/StandardAbcReader.cpp
+  src/import/Yue2Json.cpp
   src/convert/ChordFold.cpp
   src/convert/Quantizer.cpp
   src/convert/Exporter.cpp
@@ -93,8 +97,9 @@ add_test(NAME preview_render
 set_tests_properties(preview_render PROPERTIES
                      WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 
-add_executable(yue2-abcconvert
-  src/cli/AbcConvert.cpp
+add_executable(yue2json_test
+  tests/yue2json_test.cpp
+  src/import/Yue2Json.cpp
   src/core/AbcDialect.cpp
   src/core/AbcChecker.cpp
   src/core/RefusalLog.cpp
@@ -105,7 +110,29 @@ add_executable(yue2-abcconvert
   src/convert/Quantizer.cpp
   src/convert/Exporter.cpp
 )
+target_include_directories(yue2json_test PRIVATE src)
+target_link_libraries(yue2json_test PRIVATE Qt6::Widgets Qt6::Multimedia)
+add_test(NAME yue2json
+         COMMAND yue2json_test)
+set_tests_properties(yue2json PROPERTIES
+                     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+                     ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+add_executable(yue2-abcconvert
+  src/cli/AbcConvert.cpp
+  src/core/AbcDialect.cpp
+  src/core/AbcChecker.cpp
+  src/core/RefusalLog.cpp
+  src/core/SongModel.cpp
+  src/import/MidiImport.cpp
+  src/import/StandardAbcReader.cpp
+  src/import/Yue2Json.cpp
+  src/convert/ChordFold.cpp
+  src/convert/Quantizer.cpp
+  src/convert/Exporter.cpp
+)
 target_include_directories(yue2-abcconvert PRIVATE src)
+target_link_libraries(yue2-abcconvert PRIVATE Qt6::Widgets Qt6::Multimedia)
 add_test(NAME cli_convert
          COMMAND yue2-abcconvert --force tests/data/scale.mid /tmp/opencode/cli-scale.abc /tmp/opencode/cli-scale.log)
 set_tests_properties(cli_convert PROPERTIES

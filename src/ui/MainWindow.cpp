@@ -20,10 +20,19 @@
 #include "core/AbcDialect.h"
 #include "import/MidiImport.h"
 #include "import/StandardAbcReader.h"
+#include "import/Yue2Json.h"
 
 namespace yue2_abcedit {
 
-MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) { buildUi(); }
+MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
+    buildUi();
+    // Re-apply the startup split after the first layout pass, which
+    // otherwise resets it to size-hint proportions.
+    QTimer::singleShot(0, this, [this] {
+        if (auto* split = findChild<QSplitter*>())
+            split->setSizes({540, 560});
+    });
+}
 
 void MainWindow::buildUi() {
     setWindowTitle("yue2-abcedit — MIDI/ABC to native ABC");
@@ -54,8 +63,11 @@ void MainWindow::buildUi() {
     root->addLayout(bottomBar);
 
     stack_ = new QStackedWidget(this);
+    // Let the splitter shrink the wizard well below the mapper table's
+    // size hint (the table scrolls horizontally instead).
+    stack_->setMinimumWidth(280);
     split->addWidget(stack_);
-    split->setStretchFactor(0, 3);
+    split->setStretchFactor(0, 2);
 
     // ---- Page 0: Import ----
     {
@@ -177,12 +189,25 @@ void MainWindow::buildUi() {
         auto* run = new QPushButton("Export (refuses overwrite w/o confirm)",
                                     w);
         l->addWidget(run);
+        auto* jbrowse = new QPushButton("Choose JSON output path…", w);
+        l->addWidget(jbrowse);
+        exportJsonPathLabel_ = new QLabel("(no JSON output chosen)", w);
+        l->addWidget(exportJsonPathLabel_);
+        exportJsonButton_ = new QPushButton(
+            "Export JSON (merge editor abc into copy of source)", w);
+        exportJsonButton_->setEnabled(false);
+        exportJsonButton_->setToolTip("Open a .json file first");
+        l->addWidget(exportJsonButton_);
         l->addStretch(1);
         auto* back = new QPushButton("← Back", w);
         l->addWidget(back);
         connect(browse, &QPushButton::clicked, this,
                 &MainWindow::onExportBrowse);
         connect(run, &QPushButton::clicked, this, &MainWindow::onExportRun);
+        connect(jbrowse, &QPushButton::clicked, this,
+                &MainWindow::onExportJsonBrowse);
+        connect(exportJsonButton_, &QPushButton::clicked, this,
+                &MainWindow::onExportJsonRun);
         connect(back, &QPushButton::clicked, this,
                 [this] { gotoPage(3); });
         stack_->addWidget(w);
@@ -233,7 +258,7 @@ void MainWindow::buildUi() {
         connect(stopBtn, &QPushButton::clicked, this,
                 &MainWindow::onStopInApp);
         split->addWidget(side);
-        split->setStretchFactor(1, 2);
+        split->setStretchFactor(1, 3);
         liveTimer_ = new QTimer(this);
         liveTimer_->setSingleShot(true);
         liveTimer_->setInterval(400);
@@ -252,6 +277,17 @@ void MainWindow::buildUi() {
         b->setFont(f);
     }
     applyFontSize(kDefaultEditorFontSize);
+    // Explicit default pixel split (wizard narrow, editor wide): stretch
+    // factors alone only govern redistribution, the initial layout follows
+    // size hints, which favor the wizard pages. Panes must never collapse
+    // to zero via the handle.
+    if (auto* split = findChild<QSplitter*>()) {
+        split->setCollapsible(0, false);
+        split->setCollapsible(1, false);
+        split->setSizes({540, 560});
+        // Locked frame: the handle is disabled, children stay interactive.
+        if (QSplitterHandle* h = split->handle(1)) h->setEnabled(false);
+    }
     setCentralWidget(central);
 }
 
@@ -263,22 +299,38 @@ void MainWindow::gotoPage(int idx) {
 }
 
 void MainWindow::onBrowseImport() {
-    // File type comes from the extension, never from a selector: MIDI for
-    // .mid/.midi (any case), standard ABC for anything else.
+    // File type comes from the extension: MIDI for .mid/.midi (any case),
+    // Yue2 JSON for .json (extract "abc"), standard ABC otherwise.
     QString f = QFileDialog::getOpenFileName(
         this, "Choose source", "",
-        "All supported (*.mid *.MID *.midi *.MIDI *.abc *.ABC *.txt *.TXT);;"
+        "All supported (*.mid *.MID *.midi *.MIDI *.abc *.ABC *.txt *.TXT *.json *.JSON);;"
         "MIDI (*.mid *.MID *.midi *.MIDI);;"
-        "ABC (*.abc *.ABC *.txt *.TXT)");
+        "ABC (*.abc *.ABC *.txt *.TXT);;"
+        "Yue2 JSON (*.json *.JSON)");
     if (f.isEmpty()) return;
     QString ext;
     int dot = f.lastIndexOf('.');
     if (dot >= 0) ext = f.mid(dot + 1).toLower();
     midiMode_ = (ext == "mid" || ext == "midi");
+    jsonMode_ = (ext == "json");
     importPath_ = f.toStdString();
     importPathLabel_->setText(f);
     overrideCheck_->setChecked(false);
-    if (midiMode_) {
+    if (jsonMode_) {
+        if (!openJsonAbc(importPath_)) {
+            jsonMode_ = false;
+            divLabel_->setText(QString("Yue2 JSON error: cannot read \"abc\" "
+                                       "field (see log)."));
+        } else {
+            divLabel_->setText(
+                QString("Yue2 JSON: %1 abc chars loaded into the editor "
+                        "unchanged — edit, then Validate / Export JSON.")
+                    .arg(jsonAbcText_.size()));
+        }
+        divLabel_->setVisible(true);
+        overrideCheck_->setVisible(false);
+        overrideSpin_->setVisible(false);
+    } else if (midiMode_) {
         int div = 0;
         std::string err;
         if (MidiImport::readDivision(importPath_, div, err)) {
@@ -299,6 +351,11 @@ void MainWindow::onBrowseImport() {
 void MainWindow::onImportNext() {
     if (importPath_.empty()) {
         QMessageBox::warning(this, "Import", "Choose a source file first.");
+        return;
+    }
+    if (jsonMode_) {
+        // Already-native ABC sits in the editor: nothing to map or quantize.
+        gotoPage(3);
         return;
     }
     sources_.clear();
@@ -373,8 +430,14 @@ void MainWindow::onMapperNext() {
 }
 
 bool MainWindow::convertWithDefaults(const std::string& path, bool midi) {
-    midiMode_ = midi;
     importPath_ = path;
+    // .json input: already-native ABC goes straight to the editor unchanged.
+    QString ext;
+    int dot = QString::fromStdString(path).lastIndexOf('.');
+    if (dot >= 0) ext = QString::fromStdString(path).mid(dot + 1).toLower();
+    if (!midi && ext == "json") return openJsonAbc(path);
+    midiMode_ = midi;
+    jsonMode_ = false;
     sources_.clear();
     std::string err;
     bool probed = midi ? MidiImport::probeTracks(path, sources_, err)
@@ -524,7 +587,69 @@ void MainWindow::onExportRun() {
         QMessageBox::critical(this, "Export", "Cannot write output file.");
         return;
     }
+    // Export counts as saving: the editor now matches the written file.
+    editorPath_ = exportPath_;
+    editorDirty_ = false;
+    updateEditorTitle();
     QMessageBox::information(this, "Export", "Wrote output file.");
+}
+
+void MainWindow::onExportJsonBrowse() {
+    QString f = QFileDialog::getSaveFileName(this, "Output Yue2 JSON", "",
+                                             "Yue2 JSON (*.json)");
+    if (f.isEmpty()) return;
+    if (!f.endsWith(".json", Qt::CaseInsensitive)) f += ".json";
+    exportJsonPath_ = f.toStdString();
+    exportJsonPathLabel_->setText(f);
+}
+
+void MainWindow::onExportJsonRun() {
+    // Merges the editor ABC back into a copy of the source JSON: only the
+    // "abc" field is replaced, every other field stays untouched. Qt's
+    // QJsonDocument handles the string escaping both ways.
+    if (!jsonMode_ || jsonOriginPath_.empty()) {
+        QMessageBox::warning(this, "Export JSON",
+                              "Open a .json file first.");
+        return;
+    }
+    QString text = editor_->toPlainText();
+    if (exportJsonPath_.empty()) {
+        QMessageBox::warning(this, "Export JSON",
+                              "Choose a JSON output path first.");
+        return;
+    }
+    if (text.isEmpty()) {
+        QMessageBox::warning(this, "Export JSON", "Nothing to export yet.");
+        return;
+    }
+    CheckerResult cr = AbcChecker::check(text.toStdString());
+    if (!cr.ok) {
+        QMessageBox::critical(
+            this, "Export JSON",
+            QString("Editor fails the checker — fix it first:\n%1")
+                .arg(QString::fromStdString(cr.error)));
+        return;
+    }
+    QFile existing(QString::fromStdString(exportJsonPath_));
+    if (existing.exists()) {
+        auto ans = QMessageBox::question(
+            this, "Overwrite?",
+            "Output file exists. Overwrite requires explicit confirmation.\n"
+            "Overwrite?");
+        if (ans != QMessageBox::Yes) return;
+        existing.remove();
+    }
+    std::string err;
+    if (!Yue2Json::saveAbc(jsonOriginPath_, text, exportJsonPath_, err)) {
+        QMessageBox::critical(this, "Export JSON",
+                              QString::fromStdString(err));
+        return;
+    }
+    // Export counts as saving: the editor now matches the written file.
+    editorPath_ = exportJsonPath_;
+    editorDirty_ = false;
+    updateEditorTitle();
+    QMessageBox::information(this, "Export JSON", "Wrote JSON output file.");
 }
 
 void MainWindow::onEditorChanged() {
@@ -647,6 +772,37 @@ bool MainWindow::openEditorFile(const std::string& path) {
     editorDirty_ = false;
     updateEditorTitle();
     onEditorChanged();  // validate immediately, don't wait for the timer
+    return true;
+}
+
+bool MainWindow::openJsonAbc(const std::string& path) {
+    // Stored ABC is already native dialect: it lands in the editor
+    // unchanged (no mapper/quantize rebuild, which would re-render bars,
+    // respell accidentals, and drop % comments). Live validation, preview,
+    // and both exports then work on exactly this text.
+    QString abc;
+    std::string err;
+    if (!Yue2Json::loadAbc(path, abc, err)) return false;
+    jsonAbcText_ = abc;
+    jsonOriginPath_ = path;
+    jsonMode_ = true;
+    importPath_ = path;
+    importPathLabel_->setText(QString::fromStdString(path));
+    editor_->setPlainText(abc);
+    editorPath_ = path;
+    editorDirty_ = false;
+    updateEditorTitle();
+    onEditorChanged();  // validate immediately, don't wait for the timer
+    if (exportJsonButton_) {
+        exportJsonButton_->setEnabled(true);
+        if (exportJsonPath_.empty()) {
+            QString d = QString::fromStdString(path);
+            int dot = d.lastIndexOf('.');
+            QString sug = (dot >= 0 ? d.left(dot) : d) + "-edited.json";
+            exportJsonPath_ = sug.toStdString();
+            exportJsonPathLabel_->setText(sug);
+        }
+    }
     return true;
 }
 

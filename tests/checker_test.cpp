@@ -1,21 +1,11 @@
-// C++ checker parity test: sample1.abc must pass; negative cases must
-// fail with the same reasons as abc_tools.py.
-#include <fstream>
+// C++ checker test: a known-good native score must pass; negative cases
+// must fail with explicitly named reasons.
 #include <iostream>
-#include <sstream>
 #include <string>
 
 #include "core/AbcChecker.h"
 
 namespace {
-std::string readFile(const std::string& path) {
-    std::ifstream in(path);
-    if (!in) return "";
-    std::ostringstream os;
-    os << in.rdbuf();
-    return os.str();
-}
-
 int failures = 0;
 void expectPass(const std::string& name, const std::string& text) {
     auto r = yue2_abcedit::AbcChecker::check(text);
@@ -48,15 +38,7 @@ void expectFail(const std::string& name, const std::string& text,
 }
 }  // namespace
 
-int main(int argc, char** argv) {
-    std::string dir = argc > 1 ? argv[1] : "example_code";
-    std::string sample = readFile(dir + "/sample1.abc");
-    if (sample.empty()) {
-        std::cout << "FAIL: cannot read sample1.abc\n";
-        return 1;
-    }
-    expectPass("sample1.abc", sample);
-
+int main() {
     const std::string kHead =
         "X:1\nT:\nM:4/4\nL:1/32\nQ:1/4=88\n"
         "V: Vocal clef=treble name=\"Vocal Melody\" snm=\"Vocal\"\n"

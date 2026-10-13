@@ -23,6 +23,13 @@ public:
                             std::string& error);
     static bool importFile(const std::string& path, const Options& opt,
                            Song& song, std::string& error);
+    // Same pipeline from in-memory text (e.g. "abc" extracted from Yue2
+    // JSON). Path versions read the file then delegate here.
+    static bool probeVoicesFromText(const std::string& text,
+                                    std::vector<SourceEntry>& voices,
+                                    std::string& error);
+    static bool importText(const std::string& text, const Options& opt,
+                           Song& song, std::string& error);
 };
 
 }  // namespace yue2_abcedit

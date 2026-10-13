@@ -43,6 +43,8 @@ private:
     void onValidateRun();
     void onExportBrowse();
     void onExportRun();
+    void onExportJsonBrowse();
+    void onExportJsonRun();
     void onEditorChanged();
     void onPreview();
     void onPlayInApp();
@@ -62,6 +64,11 @@ private:
     QTableWidget* mapTable_ = nullptr;
     std::vector<SourceEntry> sources_;
     bool midiMode_ = true;
+    // Yue2 JSON mode: "abc" extracted from a .json file, fed through the
+    // same StandardAbcReader text pipeline as .abc content.
+    bool jsonMode_ = false;
+    QString jsonAbcText_;
+    std::string jsonOriginPath_;
 
     // Quantize page
     QLabel* quantLabel_ = nullptr;
@@ -75,6 +82,9 @@ private:
     // Export page
     QLabel* exportPathLabel_ = nullptr;
     std::string exportPath_;
+    QLabel* exportJsonPathLabel_ = nullptr;
+    QPushButton* exportJsonButton_ = nullptr;
+    std::string exportJsonPath_;
 
     // Shared state
     Song song_;
@@ -110,6 +120,11 @@ public:
     // Loads a file into the editor pane (also used for argv[1] on launch).
     // Returns false when the file cannot be read.
     bool openEditorFile(const std::string& path);
+
+    // Loads a Yue2 JSON file's "abc" field into the editor pane unchanged
+    // (stored ABC is already native dialect: no mapper/quantize rebuild).
+    // Remembers the origin for Export JSON. False when JSON is invalid.
+    bool openJsonAbc(const std::string& path);
 
     // The one-file flow without dialogs: probe, import with dialect
     // defaults, quantize, load the conversion into the editor. Returns
